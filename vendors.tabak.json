@@ -1,0 +1,32 @@
+{
+  "TABAK": {
+    "method": "GET",
+    "url": "https://tabakattorneys.lawruler.com/api-legalcrmapp.aspx?Operation=GetStatus&ReturnXML=True&Key=8A2A55F85D784406B7F79DC286745",
+    "id_param": "LeadId",
+    "auth_header": {},
+    "extra_headers": {
+      "Accept": "application/xml,application/json"
+    },
+    "status_field": "Status",
+    "substatus_field": "SubStatus",
+    "status_time_field": "StatusTime",
+    "canonical_id_field": "canonicalLeadId",
+    "status_map": {
+      "SIGNED": "SIGNED",
+      "RETAINED": "SIGNED",
+      "APPOINTMENT SET": "APPT_SET",
+      "QUALIFIED": "QUALIFIED",
+      "DUPLICATE": "DUPLICATE",
+      "NOT QUALIFIED": "NQ",
+      "NO ANSWER": "NO_ANSWER",
+      "BAD NUMBER": "BAD_NUMBER",
+      "IN PROGRESS": "OPEN",
+      "NEW": "OPEN"
+    },
+    "billable_statuses": [
+      "SIGNED",
+      "QUALIFIED",
+      "APPT_SET"
+    ]
+  }
+}
