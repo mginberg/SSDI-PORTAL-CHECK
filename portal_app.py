@@ -135,6 +135,8 @@ if process:
             st.download_button("Download merged_with_status.csv", final.to_csv(index=False), file_name="merged_with_status.csv", mime="text/csv")
 
 st.markdown("---")
+
+st.markdown("---")
 st.subheader("🔎 Test a Single LeadID (debug)")
 
 leadid_test = st.text_input("Enter a LeadID to test the status API (e.g., 711551)", value="")
@@ -142,26 +144,22 @@ debug_cfg_json = st.text_area("Optional: override vendor config JSON for this te
 do_test = st.button("Test Status Lookup")
 
 def redact_url(u: str):
-    # Redact Key=... in query string
     import re
     return re.sub(r'(Key=)[^&]+', r'\1****', u)
 
 if do_test:
     try:
-        # Load config: from textarea, or vendors_json, or TABAK fallback
+        # Determine config (override > uploaded vendors.json > TABAK fallback)
         test_cfg = None
         if debug_cfg_json.strip():
-            import json as _json
-            test_cfg = _json.loads(debug_cfg_json)
+            test_cfg = json.loads(debug_cfg_json)
         elif vendors_json is not None:
-            import json as _json
-            cfgs_all = _json.load(vendors_json)
+            cfgs_all = json.load(vendors_json)
             if vendor_code in cfgs_all:
                 test_cfg = cfgs_all[vendor_code]
-            elif len(cfgs_all)==1:
+            elif len(cfgs_all) == 1:
                 test_cfg = list(cfgs_all.values())[0]
         if test_cfg is None:
-            # Hardcoded TABAK fallback
             test_cfg = {
                 "method":"GET",
                 "url":"https://tabakattorneys.lawruler.com/api-legalcrmapp.aspx?Operation=GetStatus&ReturnXML=True&Key=8A2A55F85D784406B7F79DC286745",
@@ -182,54 +180,61 @@ if do_test:
         if not leadid_test.strip():
             st.error("Enter a LeadID to test.")
         else:
-            # Build request
-            import requests, xml.etree.ElementTree as ET
-            method = test_cfg.get('method','GET').upper()
-            url = test_cfg.get('url','')
-            id_param = test_cfg.get('id_param','LeadId')
-            headers = test_cfg.get('auth_header',{}).copy()
-            headers.update(test_cfg.get('extra_headers',{}))
+            method = (test_cfg.get('method') or 'GET').upper()
+            url = test_cfg.get('url') or ''
+            id_param = test_cfg.get('id_param') or 'LeadId'
+            headers = dict(test_cfg.get('auth_header') or {})
+            headers.update(test_cfg.get('extra_headers') or {})
             req_url = url
             payload = None
             if '{id}' in req_url:
                 req_url = req_url.replace('{id}', leadid_test.strip())
             elif method == 'GET':
-                sep='&' if '?' in req_url else '?'
+                sep = '&' if '?' in req_url else '?'
                 req_url = f"{req_url}{sep}{id_param}={leadid_test.strip()}"
             else:
                 payload = {id_param: leadid_test.strip()}
 
-            st.code(f\"\"\"REQUEST:
-{method} {redact_url(req_url)}
-Headers: {headers}
-Body: {payload or '(none)'}\"\"\", language="http")
+            request_preview = "REQUEST:\\n"
+            request_preview += f"{method} {redact_url(req_url)}\\n"
+            request_preview += f"Headers: {headers}\\n"
+            request_preview += f"Body: {payload if (payload and method != 'GET') else '(none)'}"
+            st.code(request_preview, language="http")
 
-            r = requests.request(method, req_url, headers=headers, json=payload if payload and method!='GET' else None, timeout=30)
+            import requests, xml.etree.ElementTree as ET
+            r = requests.request(method, req_url, headers=headers, json=payload if (payload and method != 'GET') else None, timeout=30)
             st.write("HTTP status:", r.status_code)
-            preview = r.text[:1000] + ("..." if len(r.text) > 1000 else "")
+            preview = (r.text or "")[:1000]
+            if len(r.text or "") > 1000:
+                preview += "..."
             st.text_area("Raw response preview", preview, height=200)
 
             parsed = {}
+            # Try JSON first
             try:
                 js = r.json()
+            except Exception:
+                js = None
+
+            if isinstance(js, dict):
                 parsed['status'] = js.get(test_cfg.get('status_field','status'))
                 parsed['substatus'] = js.get(test_cfg.get('substatus_field','subStatus'))
                 parsed['status_time'] = js.get(test_cfg.get('status_time_field','statusTime'))
                 parsed['canonical'] = js.get(test_cfg.get('canonical_id_field','canonicalLeadId'))
                 parsed['source'] = 'json'
-            except Exception:
+            else:
                 try:
                     root = ET.fromstring(r.text)
                     def find(tag):
                         el = root.find(f'.//{tag}') or root.find(f'.//{tag.lower()}') or root.find(f'.//{tag.upper()}')
-                        return el.text.strip() if el is not None and el.text else None
+                        return (el.text or '').strip() if el is not None and el.text else None
                     parsed['status'] = find(test_cfg.get('status_field','Status'))
                     parsed['substatus'] = find(test_cfg.get('substatus_field','SubStatus')) or find('Reason')
                     parsed['status_time'] = find(test_cfg.get('status_time_field','StatusTime')) or find('UpdatedAt')
                     parsed['canonical'] = find(test_cfg.get('canonical_id_field','canonicalLeadId')) or find('CanonicalLeadId')
                     parsed['source'] = 'xml'
                 except Exception as e:
-                    parsed['error'] = f'Parse error: {e}'
+                    parsed['error'] = f"Parse error: {e}"
 
             st.json(parsed)
     except Exception as e:
