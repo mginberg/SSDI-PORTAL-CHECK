@@ -9,8 +9,11 @@ def extract_lead_id(text):
     return ids[-1] if ids else None
 
 def extract_phone(val):
-    try: return int(float(val))
-    except: return None
+    try:
+        n = int(float(val))
+        return str(n)
+    except:
+        return str(val)
 
 def extract_xml_fields(xml_str):
     try:
@@ -29,6 +32,9 @@ st.title("Law Ruler Lead Status Dashboard")
 
 call_file = st.file_uploader("Upload Call Log CSV")
 zap_file = st.file_uploader("Upload Zap History CSV")
+sales_file = st.file_uploader("Upload SALES SHEET CSV (optional, to check missing)", key="sales")
+
+final_df = None
 
 if call_file and zap_file:
     calls = pd.read_csv(call_file)
@@ -37,12 +43,11 @@ if call_file and zap_file:
     zaps["phone"] = zaps["input__323618010__data__CellPhone"].apply(extract_phone)
     merged = pd.merge(calls, zaps, on="phone")
     merged["LeadID"] = merged["output__323618010__text"].apply(extract_lead_id)
-    
-    # Remove duplicate LeadIDs (keep the first occurrence only)
     merged_unique = merged.drop_duplicates(subset=["LeadID"], keep="first")
 
     st.write(merged_unique[["Date", "First", "Last", "Caller ID", "Duration", "LeadID"]])
     lead_ids = merged_unique["LeadID"].dropna().unique()
+
     if st.button("Fetch Law Ruler Statuses"):
         results = []
         for i, row in merged_unique.iterrows():
@@ -62,7 +67,7 @@ if call_file and zap_file:
                 results.append({
                     "First Name": row["First"],
                     "Last Name": row["Last"],
-                    "Phone": row["Caller ID"],
+                    "Phone": str(row["Caller ID"]),
                     "Call Duration": row["Duration"],
                     "Call Date": row["Date"],
                     "LeadID": lid,
@@ -71,14 +76,30 @@ if call_file and zap_file:
                     "Lead Assignee": assignee
                 })
         result_df = pd.DataFrame(results)
+        final_df = result_df
         st.write(result_df)
         st.download_button("Download Results as CSV", result_df.to_csv(index=False), "lead_status_results.csv")
-else:
-    st.info("Upload both Call Log and Zap History files to view matches and check statuses.")
+
+if final_df is not None and sales_file is not None:
+    sales = pd.read_csv(sales_file)
+    # Normalize phone numbers for match
+    sales["phone_clean"] = sales["PHONE NUMBER"].apply(extract_phone)
+    final_df["phone_clean"] = final_df["Phone"].apply(extract_phone)
+    # Attempt to match by phone OR customer name
+    sales["name_clean"] = sales["CX NAME"].str.strip().str.lower()
+    final_df["name_clean"] = (final_df["First Name"].astype(str) + " " + final_df["Last Name"].astype(str)).str.strip().str.lower()
+    # Find sales sheet rows that have NO match in results
+    phone_match = sales[~sales["phone_clean"].isin(final_df["phone_clean"])]
+    name_match = sales[~sales["name_clean"].isin(final_df["name_clean"])]
+    # Only customers missing by BOTH phone and name
+    missing = sales[sales.index.isin(phone_match.index) & sales.index.isin(name_match.index)]
+    st.write("**Customers present in SALES SHEET but missing from status results (unmatched by phone and name):**")
+    st.write(missing)
+    st.download_button("Download Missing Customers as CSV", missing.to_csv(index=False), "missing_customers.csv")
 
 st.markdown("""
 **Instructions:**
-- Upload your Call Log and Zap History as CSV.
-- Click 'Fetch Law Ruler Statuses' then download full results as CSV.
-- Each unique LeadID is fetched only once.
+- Upload Call Log, Zap History, and optionally your sales sheet.
+- Click 'Fetch Law Ruler Statuses' then see/download your results.
+- After uploading your sales sheet, you'll see/download a list of sales customers missing from your process results.
 """)
