@@ -12,7 +12,7 @@ def extract_phone(val):
     try: return int(float(val))
     except: return None
 
-def extract_status_owner_assignee(xml_str):
+def extract_xml_fields(xml_str):
     try:
         root = ET.fromstring(xml_str)
         status = root.findtext(".//Status") or ""
@@ -25,7 +25,7 @@ def extract_status_owner_assignee(xml_str):
 LAW_RULER_API = "https://tabakattorneys.lawruler.com/api-legalcrmapp.aspx"
 API_KEY = "8A2A55F85D784406B7F79DC286745"
 
-st.title("Law Ruler Lead API Dashboard")
+st.title("Law Ruler Lead Status Dashboard")
 
 call_file = st.file_uploader("Upload Call Log CSV")
 zap_file = st.file_uploader("Upload Zap History CSV")
@@ -37,12 +37,15 @@ if call_file and zap_file:
     zaps["phone"] = zaps["input__323618010__data__CellPhone"].apply(extract_phone)
     merged = pd.merge(calls, zaps, on="phone")
     merged["LeadID"] = merged["output__323618010__text"].apply(extract_lead_id)
-    st.write(merged[["Date", "First", "Last", "Caller ID", "Duration", "LeadID"]])
-    lead_ids = merged["LeadID"].dropna().unique()
     
+    # Remove duplicate LeadIDs (keep the first occurrence only)
+    merged_unique = merged.drop_duplicates(subset=["LeadID"], keep="first")
+
+    st.write(merged_unique[["Date", "First", "Last", "Caller ID", "Duration", "LeadID"]])
+    lead_ids = merged_unique["LeadID"].dropna().unique()
     if st.button("Fetch Law Ruler Statuses"):
         results = []
-        for i, row in merged.iterrows():
+        for i, row in merged_unique.iterrows():
             lid = row["LeadID"]
             if pd.notna(lid):
                 params = {
@@ -53,7 +56,7 @@ if call_file and zap_file:
                 }
                 try:
                     resp = requests.get(LAW_RULER_API, params=params, timeout=20)
-                    status, owner, assignee = extract_status_owner_assignee(resp.text)
+                    status, owner, assignee = extract_xml_fields(resp.text)
                 except Exception as e:
                     status, owner, assignee = f"Error: {e}", "", ""
                 results.append({
@@ -75,7 +78,7 @@ else:
 
 st.markdown("""
 **Instructions:**
-- Upload your Call Log and Zap History exports as CSV.
-- Click 'Fetch Law Ruler Statuses' for all matched leads.
-- Download the full results as CSV.
+- Upload your Call Log and Zap History as CSV.
+- Click 'Fetch Law Ruler Statuses' then download full results as CSV.
+- Each unique LeadID is fetched only once.
 """)
