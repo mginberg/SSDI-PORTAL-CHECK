@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import re
+import xml.etree.ElementTree as ET
 
 def extract_lead_id(text):
     ids = re.findall(r'(\d{5,8})', str(text))
@@ -11,10 +12,18 @@ def extract_phone(val):
     try: return int(float(val))
     except: return None
 
+def get_status_from_xml(xml_str):
+    try:
+        root = ET.fromstring(xml_str)
+        status = root.findtext(".//Status")
+        return status if status else "Status Not Found"
+    except Exception as e:
+        return f"XML Parse Error: {e}"
+
 LAW_RULER_API = "https://tabakattorneys.lawruler.com/api-legalcrmapp.aspx"
 API_KEY = "8A2A55F85D784406B7F79DC286745"
 
-st.title("Law Ruler API Dashboard")
+st.title("Law Ruler Lead API Dashboard")
 
 call_file = st.file_uploader("Upload Call Log CSV")
 zap_file = st.file_uploader("Upload Zap History CSV")
@@ -42,9 +51,9 @@ if call_file and zap_file:
                 }
                 try:
                     resp = requests.get(LAW_RULER_API, params=params, timeout=20)
-                    result = resp.text[:500]
+                    status = get_status_from_xml(resp.text)
                 except Exception as e:
-                    result = f"Error: {e}"
+                    status = f"Error: {e}"
                 results.append({
                     "First Name": row["First"],
                     "Last Name": row["Last"],
@@ -52,8 +61,17 @@ if call_file and zap_file:
                     "Call Duration": row["Duration"],
                     "Call Date": row["Date"],
                     "LeadID": lid,
-                    "Law Ruler Status XML": result
+                    "Law Ruler Status": status
                 })
-        st.write(pd.DataFrame(results))
+        result_df = pd.DataFrame(results)
+        st.write(result_df)
+        st.download_button("Download Results as CSV", result_df.to_csv(index=False), "lead_status_results.csv")
 else:
     st.info("Upload both Call Log and Zap History files to view matches and check statuses.")
+
+st.markdown("""
+**Instructions:**
+- Upload your Call Log and Zap History exports as CSV.
+- Click 'Fetch Law Ruler Statuses' for all matched leads.
+- Download the full results as CSV.
+""")
