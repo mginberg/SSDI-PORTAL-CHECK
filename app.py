@@ -19,11 +19,10 @@ def extract_xml_fields(xml_str):
     try:
         root = ET.fromstring(xml_str)
         status = root.findtext(".//Status") or ""
-        owner = root.findtext(".//LeadOwner") or ""
-        assignee = root.findtext(".//LeadAssignee") or ""
-        return status, owner, assignee
+        lead_provider = root.findtext(".//LeadProvider") or ""
+        return status, lead_provider
     except Exception as e:
-        return f"XML Parse Error: {e}", "", ""
+        return f"XML Parse Error: {e}", ""
 
 LAW_RULER_API = "https://tabakattorneys.lawruler.com/api-legalcrmapp.aspx"
 API_KEY = "8A2A55F85D784406B7F79DC286745"
@@ -61,9 +60,9 @@ if call_file and zap_file:
                 }
                 try:
                     resp = requests.get(LAW_RULER_API, params=params, timeout=20)
-                    status, owner, assignee = extract_xml_fields(resp.text)
+                    status, lead_provider = extract_xml_fields(resp.text)
                 except Exception as e:
-                    status, owner, assignee = f"Error: {e}", "", ""
+                    status, lead_provider = f"Error: {e}", ""
                 results.append({
                     "First Name": row["First"],
                     "Last Name": row["Last"],
@@ -72,8 +71,7 @@ if call_file and zap_file:
                     "Call Date": row["Date"],
                     "LeadID": lid,
                     "Law Ruler Status": status,
-                    "Lead Owner": owner,
-                    "Lead Assignee": assignee
+                    "Lead Provider": lead_provider
                 })
         result_df = pd.DataFrame(results)
         final_df = result_df
@@ -82,16 +80,12 @@ if call_file and zap_file:
 
 if final_df is not None and sales_file is not None:
     sales = pd.read_csv(sales_file)
-    # Normalize phone numbers for match
     sales["phone_clean"] = sales["PHONE NUMBER"].apply(extract_phone)
     final_df["phone_clean"] = final_df["Phone"].apply(extract_phone)
-    # Attempt to match by phone OR customer name
     sales["name_clean"] = sales["CX NAME"].str.strip().str.lower()
     final_df["name_clean"] = (final_df["First Name"].astype(str) + " " + final_df["Last Name"].astype(str)).str.strip().str.lower()
-    # Find sales sheet rows that have NO match in results
     phone_match = sales[~sales["phone_clean"].isin(final_df["phone_clean"])]
     name_match = sales[~sales["name_clean"].isin(final_df["name_clean"])]
-    # Only customers missing by BOTH phone and name
     missing = sales[sales.index.isin(phone_match.index) & sales.index.isin(name_match.index)]
     st.write("**Customers present in SALES SHEET but missing from status results (unmatched by phone and name):**")
     st.write(missing)
@@ -99,7 +93,7 @@ if final_df is not None and sales_file is not None:
 
 st.markdown("""
 **Instructions:**
-- Upload Call Log, Zap History, and optionally your sales sheet.
-- Click 'Fetch Law Ruler Statuses' then see/download your results.
-- After uploading your sales sheet, you'll see/download a list of sales customers missing from your process results.
+- Upload Call Log, Zap History, and (optionally) your sales sheet.
+- Click 'Fetch Law Ruler Statuses' then download your results.
+- You'll see/download a list of missing sales customers if you upload your sales sheet.
 """)
