@@ -31,20 +31,19 @@ if call_file and zap_file:
             url = f"https://ssdi-app-check-y742cphgqxkh2cysfols8t.streamlit.app/lead_status?lead_id={lid}"
             try:
                 resp = requests.get(url, timeout=20)
-                out = resp.json()
                 results.append({
                     "LeadID": lid,
-                    "Status": out.get("result", "")[:200],
-                    "API URL": url
+                    "API URL": url,
+                    "Status (Raw XML)": resp.text[:500]
                 })
             except Exception as e:
                 results.append({
                     "LeadID": lid,
-                    "Status": f"Error: {e}",
-                    "API URL": url
+                    "API URL": url,
+                    "Status (Raw XML)": f"Error: {e}"
                 })
         st.write(pd.DataFrame(results))
 else:
-    st.info("Upload both Call Log and Zap History files to view matches and check statuses.")
+    st.info("Upload both files to view matches and check statuses.")
 
-st.markdown("**Proxy URL:** Using `https://ssdi-app-check-y742cphgqxkh2cysfols8t.streamlit.app` for API calls.")
+st.markdown("**Proxy URL:** `https://ssdi-app-check-y742cphgqxkh2cysfols8t.streamlit.app`")
